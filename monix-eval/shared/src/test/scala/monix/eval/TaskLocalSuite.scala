@@ -109,4 +109,94 @@ object TaskLocalSuite extends SimpleTestSuite {
 
     test.runAsyncOpt
   }
+
+  testAsync("TaskLocal.bind clears local with no async boundary") {
+    val local = TaskLocal(0)
+
+    def add(i: Int) = {
+      local.read.map(_ + i)
+    }
+
+    val res = for {
+      _ <- local.read.map(assertEquals(_, 0))
+      _ <- local.bind(1)(add(1)).map(assertEquals(_, 3))
+      _ <- local.read.map(assertEquals(_, 0))
+    } yield ()
+
+    // Works without the runAsyncOpt because it is not
+    // jumping to an async boundary
+    // When taking into consideration local vars, always
+    // use runAsyncOpt. This is just for illustration purposes
+    res.runAsync
+
+  }
+
+  testAsync("TaskLocal.bind clears local in forked thread") {
+    val local = TaskLocal(0)
+
+    def add(i: Int) = {
+      local.read.map(_ + i)
+    }
+
+    val res = for {
+      _ <- local.read.map(assertEquals(_, 0))
+      _ <- local.bind(1)(add(1).executeWithFork).map(assertEquals(_, 2))
+      _ <- local.read.map(assertEquals(_, 0))
+    } yield ()
+
+    // Must use runAsyncOpt because of async boundary
+    // Introduced by forked task.
+    res.runAsyncOpt
+
+  }
+
+  test("TaskLocal.bind clears current local in current thread") {
+    import scala.concurrent.Await
+    import scala.concurrent.duration._
+
+    val local = TaskLocal(0)
+
+    def add(i: Int) = {
+      local.read.map(_ + i)
+    }
+
+    //Basically we do the same checks as before but blocking
+    //to explicitly check the status of the local in the
+    //current execution thread
+
+    assertEquals(local.read.coeval.value, Right(0))
+
+    val res = Await.result(local.bind(1)(add(1)).runAsyncOpt, 5.seconds)
+
+    assertEquals(res, 2)
+
+    //clears the local as expected
+    assertEquals(local.read.coeval.value, Right(0))
+
+  }
+
+  test("TaskLocal.bind does not clear current local in forked thread") {
+    import scala.concurrent.Await
+    import scala.concurrent.duration._
+
+    val local = TaskLocal(0)
+
+    def add(i: Int) = {
+      local.read.map(_ + i)
+    }
+
+    //We do the current local var
+    assertEquals(local.read.coeval.value, Right(0))
+
+    //Bind clears the local in the forked thread
+    //Which means it doesn't do the proper cleanup
+    val res = Await.result(local.bind(1)(add(1).executeWithFork).runAsyncOpt, 5.seconds)
+
+    assertEquals(res, 2)
+
+    // And leaves the current local var with 1
+    assertEquals(local.read.coeval.value, Right(1))
+
+
+  }
 }
