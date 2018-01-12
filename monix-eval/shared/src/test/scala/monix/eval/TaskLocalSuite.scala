@@ -119,7 +119,7 @@ object TaskLocalSuite extends SimpleTestSuite {
 
     val res = for {
       _ <- local.read.map(assertEquals(_, 0))
-      _ <- local.bind(1)(add(1)).map(assertEquals(_, 3))
+      _ <- local.bind(1)(add(1)).map(assertEquals(_, 2))
       _ <- local.read.map(assertEquals(_, 0))
     } yield ()
 
